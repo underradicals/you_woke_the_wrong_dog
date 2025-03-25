@@ -1,0 +1,6 @@
+@Destiny2App.ClientApi_HostAddress = http://localhost:5112
+
+GET http://localhost:5112/weatherforecast/
+Accept: application/json
+
+###
