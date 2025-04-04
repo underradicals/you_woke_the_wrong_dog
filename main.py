@@ -1,6 +1,6 @@
+from application import Manifest
 from infrastucture import download_manifest
 
 if __name__ == '__main__':
-    manifest = download_manifest()
-    print(manifest["Response"]['version'])
-
+    manifest: Manifest = download_manifest()
+    print(manifest['Response']['version'])
