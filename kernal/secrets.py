@@ -1,3 +1,8 @@
 from os import environ
 
-API_KEY: str = environ['D2_API_KEY']
+class Secrets:
+  API_KEY = environ['D2_API_KEY']
+  
+  
+if __name__ == '__main__':
+  pass

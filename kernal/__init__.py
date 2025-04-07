@@ -1,5 +1,6 @@
-from .directories import ROOT
-from .secrets import API_KEY
+from .directories import Directories
+from .secrets import Secrets
+from .strings import MagicStrings
 
 
-__all__ = ['ROOT', 'API_KEY']
+__all__ = ['Directories', 'Secrets', 'MagicStrings']
