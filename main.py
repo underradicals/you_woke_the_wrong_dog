@@ -1,85 +1,78 @@
-from typing import Any
-from redis import Redis
-from infrastructure import ArgumentEmptyException
-from kernal import MagicStrings, Secrets
-from requests import HTTPError, get, Session, head
-from urllib3.util import Retry
-from requests.adapters import HTTPAdapter
+from zipfile import ZipFile
+import httpx
+import asyncio
+import redis.asyncio as redis
+from typing import Optional, TypedDict
+from orjson import loads, dumps
+import aiofiles
 
-session = Session()
-retries = Retry(
-    total=5,
-    backoff_factor=0.1,
-    raise_on_redirect=False,
-    backoff_jitter=2,
-    status_forcelist=[500, 501, 503, 504],
-)
-session.mount("https://", adapter=HTTPAdapter(max_retries=retries))
-redis_connection = Redis(host="localhost", port=6379, decode_responses=True)
-request_headers = {
-    'x-api-key': Secrets.API_KEY,
+from infrastructure import fetch_with_cache
+from kernal import Directories
+from kernal import MagicStrings
+
+ENV = 'Production'
+
+class GlobalState(TypedDict):
+    world_content_url: str
+    json_world_component_content_paths: dict
+    
+
+global_state = {
+    'world_content_url': '',
+    'json_world_component_content_paths': dict()
 }
 
-def get_last_modified(cache_key: str) -> str | None:
-    v = redis_connection.get(f"{cache_key}.last-modified")
-    if v is None:
-        return None
-    return str(v)
+def chunk_list(input_list, chunk_size):
+    return [input_list[i:i + chunk_size] for i in range(0, len(input_list), chunk_size)]
 
-def set_if_modified_since(url: str):
-    with head(f'{MagicStrings.BASE_ADDRESS}{url}', allow_redirects=True) as head_response:
-            request_headers.update({
-                'If-Modified-Since': head_response.headers['Last-Modified']
-            })
-            
+async def ingestion():
+    if not Directories.DATA.exists():
+        Directories.DATA.mkdir(exist_ok=True, parents=True)
+    if ENV == 'Development':
+        pass
+    else:
+        pass
+        # get_manifest()
+    max_workers = 5
+    with open("manifest.json", "rb") as manifest_string:
+        manifest_json = loads(manifest_string.read())
+        manifest_response = manifest_json['Response']
+        
+        global_state['world_content_url'] = f'{MagicStrings.BASE_ADDRESS}{manifest_response['mobileWorldContentPaths']['en']}'
+        global_state['json_world_component_content_paths'] = {x: y for x, y in manifest_response['jsonWorldComponentContentPaths']['en'].items()}
+        
+        jwccp_keys = [Directories.DATA / f'{x}.json' for x in global_state['json_world_component_content_paths'].keys()]
+        jwccp_keys.append(Directories.C_ROOT / 'world_content.zip')
+        
+        jwccp_values = [x for x in global_state['json_world_component_content_paths'].values()]
+        jwccp_values.append(global_state['world_content_url'])
 
-def set_last_modified(cache_key: str, headers: dict[str, Any]):
-    redis_connection.set(f'{cache_key}.last-modified', headers['Last-Modified'])
 
-
-def request(url: str, cache_key: str):
-    with get(f'{MagicStrings.BASE_ADDRESS}{url}', allow_redirects=True, headers=request_headers) as response:
-        response.raise_for_status()
-        if response.status_code == 304:
-            return
-        set_last_modified(cache_key, dict(response.headers))
-        return response.content
-
-
-def download(url: str, cache_key: str):
-    """
-    Description:
-        To download a resource, or not when the resource has not changed --
-        To make a robust method for handling frequent requests to the D2 servers we must address several pain points when dealing with
-        stale data and data that changes often.
-    Parameters:
-        url (str): -- The url to the resource we are downloading
-        cache_key (str): -- The leading identifier for the keys submitted to the Store particular to `this` request e.g. `(url)`.
-    Returns: 
-        bytes
-    Raises:
-        ArgumentEmptyException: Signature cannot be empty or None
-    """
+    results = await fetch_with_cache(jwccp_values)
+    for result in results:
+        content = result["content"] # type: ignore
+        if result.get('error'):
+            print(f"Error fetching {result['url']}: {result['error']}") # type: ignore
+        if result['name'] == 'world_content.zip': # type: ignore
+            async with aiofiles.open(Directories.C_ROOT / f'{result['name']}', "wb") as f: # type: ignore
+                if isinstance(content, str):
+                    await f.write(content.encode("utf-8"))
+                elif isinstance(content, bytes):
+                    await f.write(content)
+        else:    
+            async with aiofiles.open(Directories.DATA / f'{result['name']}', "wb") as f: # type: ignore
+                if isinstance(content, str):
+                    await f.write(content.encode("utf-8"))
+                elif isinstance(content, bytes):
+                    await f.write(content)
+        print(f"Downloaded File: {result['name']} -> {result['status']}") # type: ignore
     
-    try:
-        if url == "" or cache_key == "":
-            raise ArgumentEmptyException("Signature cannot be empty or None")
-        
-        # Check Store for Last-Modified Header
-        last_modified = get_last_modified(cache_key=cache_key)
-        
-        if last_modified is None:
-            # Make the request and record last-modified: Nothing exist in the store
-            return request(url, cache_key)
-
-        set_if_modified_since(url)
-        return request(url, cache_key)
-
-    except ArgumentEmptyException as e:
-        print(e)
-    except HTTPError as e:
-        print(e)
+    with open(MagicStrings.WORLD_CONENT_DB, 'wb') as db_file:
+        with ZipFile(MagicStrings.WORLD_CONTENT_ZIP, 'r') as zip_file:
+            filename = zip_file.namelist()[0]
+            with zip_file.open(filename, 'r') as archive:
+                db_file.write(archive.read())
 
 
 if __name__ == "__main__":
-    download('/common/destiny2_content/json/en/DestinyDamageTypeDefinition-c7d255e4-54c1-4a34-b87e-f64c2ba9f977.json', "damage_type_def")
+    asyncio.run(ingestion())

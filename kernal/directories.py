@@ -1,8 +1,9 @@
-from pathlib import Path
+from pathlib import Path, PosixPath
 
 class Directories:
     ROOT = Path().cwd()
-    DATA = ROOT / 'data'
+    C_ROOT = PosixPath('/mnt/d/D2App/')
+    DATA = C_ROOT / 'data'
 
 if __name__ == '__main__':
     pass
