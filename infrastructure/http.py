@@ -4,9 +4,11 @@ from types import CoroutineType
 from typing import Any, Optional, Sequence
 import httpx
 import redis.asyncio as redis
+import requests
 
 from application import FetchRequest
 from kernal import Secrets
+from kernal.strings import MagicStrings
 from .http_store import HttpStore
 
 class StatusCodes:
@@ -189,3 +191,15 @@ async def fetch(client: httpx.AsyncClient,
             if attempt == max_retries:
                 return {"url": url, "error": str(e), "status": response.status_code, 'from_cache': False, 'name': 'Error' , 'content': 'Error: Something went wrong'}
             await asyncio.sleep(retry_delay)
+
+
+def get_manifest():
+    file = open(MagicStrings.MANIFEST_PATH, "wb")
+    response = requests.get(MagicStrings.MANIFEST_URL_PATH)
+    response.raise_for_status()
+    if response.status_code == 200:
+        for chunk in response.iter_content(1024*1024):
+            if chunk:
+                file.write(chunk)
+    file.close()
+    response.close()

@@ -1,6 +1,7 @@
 from .exceptions import ArgumentEmptyException
-from .http import fetch_with_cache, fetch
+from .http import fetch_with_cache, fetch, get_manifest
 from .fileio import write_archive, write_json_component_content_paths, setup
+from .ingestion_services import ingestion
 
 
 __all__ = [
@@ -10,6 +11,8 @@ __all__ = [
     "write_archive",
     "write_json_component_content_paths",
     "setup",
+    "get_manifest",
+    "ingestion"
 ]
 
 

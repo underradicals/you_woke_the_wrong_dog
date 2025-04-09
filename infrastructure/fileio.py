@@ -7,12 +7,12 @@ from kernal.directories import Directories
 from kernal.strings import MagicStrings
 
 
-def write_archive():
-    with open(MagicStrings.WORLD_CONENT_DB, "wb") as db_file:
-        with ZipFile(MagicStrings.WORLD_CONTENT_ZIP, "r") as zip_file:
-            filename = zip_file.namelist()[0]
-            with zip_file.open(filename, "r") as archive:
-                db_file.write(archive.read())
+def write_archive(dest: Path, source: Path):
+    with open(dest, "wb") as db_file:
+        with ZipFile(source, "r") as zip_file:
+            for filename in zip_file.namelist():
+                with zip_file.open(filename, "r") as archive:
+                    db_file.write(archive.read())
 
 
 async def write_json_component_content_paths(
