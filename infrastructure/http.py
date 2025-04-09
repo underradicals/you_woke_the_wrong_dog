@@ -57,7 +57,13 @@ def check_for_etag(headers: dict, meta: dict):
 
 
 async def store_meta_data(response: httpx.Response, meta_key: str):
-    """Given a particula response and meta_key, store either Header Last-Modified or ETag"""
+    """Given a particula response and meta_key, store either Header Last-Modified or ETag
+    
+    Parameters
+    ----------
+    response : `httpx.Response`
+    meta_key : `str`
+    """
     new_meta = {}
     if "Last-Modified" in response.headers:
         new_meta["Last-Modified"] = response.headers["Last-Modified"]
@@ -68,9 +74,19 @@ async def store_meta_data(response: httpx.Response, meta_key: str):
         await redis_client.hset(meta_key, new_meta)
 
 
-async def get_cached_response(client: httpx.AsyncClient, url: str, cache_key: str, headers: dict):
-    """
-        If either If-Modified-Since or If-None-Match returns a 304 then return the cached data
+async def get_cached_response(client: httpx.AsyncClient, url: str, cache_key: str, headers: dict) -> dict[str, str | int | float | bytes | None]:
+    """If either If-Modified-Since or If-None-Match returns a 304 then return the cached data
+    
+    Parameters
+    ----------
+    client : `httpx.AsyncClient`
+    url : `str`
+    cache_key : `str`
+    headers : `dict`
+    
+    Return
+    ------
+    dict : url, name, from_cache, status, content
     """
     cached_response = await redis_client.get(cache_key)
     return {
@@ -90,6 +106,24 @@ async def fetch_with_cache(
     timeout: float = 10.0,
     max_retries: int = 3,
     retry_delay: float = 1.0):
+    """Iterates over a list of urls concurrently
+
+    Parameters
+    ----------
+    urls (list[str]) : 
+        The partial url (The base url is defined in the AsyncClient)
+    cache_prefix (str, optional) : 
+        The string prefix to prepend to the cache_key . Defaults to "cache".
+    timeout (float, optional) : Defaults to 10.0.
+    max_retries (int, optional) : 
+        The number of times the method should attempt to retry before failing. Defaults to 3.
+    retry_delay (float, optional) : 
+        The delay before the method shoul make another attempt. Defaults to 1.0.
+
+    Returns
+    -------
+        _type_: Returns a Future
+    """
     async with httpx.AsyncClient(timeout=timeout, http2=True, base_url='https://www.bungie.net', follow_redirects=True) as client:
         tasks = [
             fetch(client, url, cache_prefix, max_retries, retry_delay)
@@ -103,7 +137,25 @@ async def fetch(client: httpx.AsyncClient,
                 cache_prefix: str,
                 max_retries: int,
                 retry_delay: float):
-    """Fetch resource at given url with built in retry and retry delay"""
+    """Fetch resource at given url with built in retry and retry delay.
+    
+    Parameters
+    ----------
+    client : `httpx.AsyncClient`
+    url : `str`
+    cache_prefix : `str`
+    max_retries : `int`
+    retry_delay : `float`
+    
+    Return
+    ------
+    dict : url, name, from_cache, status, content
+    
+    Raise
+    -----
+    httpx : `RequestError`
+    httpx : `TimeoutException`
+     """
     cache_key: str = f'{cache_prefix}:{url}'
     meta_key: str = f'{cache_key}:meta'
     
