@@ -1,23 +1,24 @@
 import asyncio
 from enum import Enum
-from typing import Any, Optional
+from types import CoroutineType
+from typing import Any, Optional, Sequence
 import httpx
 import redis.asyncio as redis
 
+from application import FetchRequest
 from kernal import Secrets
 from .http_store import HttpStore
 
 class StatusCodes:
-    NOT_MODIFIES = 304
+    NOT_MODIFIED = 304
     OK = 200
 
-# redis_client = redis.Redis(host="localhost", port=6379, db=0)
 redis_client = HttpStore()
 
-def deserialize_response(content: Optional[bytes]) -> None | str | bytes:
+def deserialize_response(content: Optional[bytes]) -> str | bytes:
     """Deserialize content based on the type"""
     if content is None:
-        return None
+        return 'None'
     try:
         return content.decode("utf-8")
     except UnicodeDecodeError:
@@ -74,7 +75,7 @@ async def store_meta_data(response: httpx.Response, meta_key: str):
         await redis_client.hset(meta_key, new_meta)
 
 
-async def get_cached_response(client: httpx.AsyncClient, url: str, cache_key: str, headers: dict) -> dict[str, str | int | float | bytes | None]:
+async def get_cached_response(client: httpx.AsyncClient, url: str, cache_key: str, headers: dict) -> FetchRequest:
     """If either If-Modified-Since or If-None-Match returns a 304 then return the cached data
     
     Parameters
@@ -86,7 +87,7 @@ async def get_cached_response(client: httpx.AsyncClient, url: str, cache_key: st
     
     Return
     ------
-    dict : url, name, from_cache, status, content
+    dict-like : `FetchRequest`
     """
     cached_response = await redis_client.get(cache_key)
     return {
@@ -99,13 +100,12 @@ async def get_cached_response(client: httpx.AsyncClient, url: str, cache_key: st
     
 
 
-
 async def fetch_with_cache(
     urls: list[str],
     cache_prefix: str = "cache",
     timeout: float = 10.0,
     max_retries: int = 3,
-    retry_delay: float = 1.0):
+    retry_delay: float = 1.0) -> list[FetchRequest]:
     """Iterates over a list of urls concurrently
 
     Parameters
@@ -125,18 +125,19 @@ async def fetch_with_cache(
         _type_: Returns a Future
     """
     async with httpx.AsyncClient(timeout=timeout, http2=True, base_url='https://www.bungie.net', follow_redirects=True) as client:
-        tasks = [
+        tasks: list[CoroutineType[Any, Any, FetchRequest]] = [
             fetch(client, url, cache_prefix, max_retries, retry_delay)
             for url in urls
         ]
-    return await asyncio.gather(*tasks)
+        v: list[FetchRequest] = await asyncio.gather(*tasks)
+    return v
 
     
 async def fetch(client: httpx.AsyncClient,
                 url: str,
                 cache_prefix: str,
                 max_retries: int,
-                retry_delay: float):
+                retry_delay: float) -> FetchRequest: # type: ignore
     """Fetch resource at given url with built in retry and retry delay.
     
     Parameters
@@ -168,8 +169,9 @@ async def fetch(client: httpx.AsyncClient,
     for attempt in range(1, max_retries + 1):
         try:
             response = await client.get(url, headers=headers)
-            if response.status_code == StatusCodes.NOT_MODIFIES:
-                return get_cached_response(client, url, cache_key, headers)
+            if response.status_code == StatusCodes.NOT_MODIFIED:
+                v: FetchRequest = await get_cached_response(client, url, cache_key, headers)
+                return v
             
             content = serialize_response(response)
             await redis_client.set(cache_key, content)
@@ -185,5 +187,5 @@ async def fetch(client: httpx.AsyncClient,
             }
         except (httpx.RequestError, httpx.TimeoutException) as e:
             if attempt == max_retries:
-                return {}
+                return {"url": url, "error": str(e), "status": response.status_code, 'from_cache': False, 'name': 'Error' , 'content': 'Error: Something went wrong'}
             await asyncio.sleep(retry_delay)
