@@ -1,9 +1,10 @@
 import asyncio
-from infrastructure import ingestion
+from infrastructure import ingestion, image_ingestion
 
 
-async def main():
+async def main() -> None:
     await ingestion()
+    await image_ingestion()
 
 
 if __name__ == "__main__":

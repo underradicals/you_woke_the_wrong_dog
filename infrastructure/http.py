@@ -94,7 +94,6 @@ async def get_cached_response(client: httpx.AsyncClient, url: str, cache_key: st
     cached_response = await redis_client.get(cache_key)
     return {
             "url": url,
-            "name": 'world_content.zip' if url.endswith('content') else url.split("/")[-1].split("-")[0],
             "from_cache": True,
             "status": 304,
             "content": deserialize_response(cached_response),
@@ -171,6 +170,7 @@ async def fetch(client: httpx.AsyncClient,
     for attempt in range(1, max_retries + 1):
         try:
             response = await client.get(url, headers=headers)
+            print(f'Downloaded {url}')
             if response.status_code == StatusCodes.NOT_MODIFIED:
                 v: FetchRequest = await get_cached_response(client, url, cache_key, headers)
                 return v
@@ -182,14 +182,14 @@ async def fetch(client: httpx.AsyncClient,
             
             return {
                 "url": url,
-                "name": 'world_content.zip' if url.endswith('content') else url.split("/")[-1].split("-")[0],
                 "from_cache": False,
                 "status": response.status_code,
                 "content": deserialize_response(content),
             }
         except (httpx.RequestError, httpx.TimeoutException) as e:
             if attempt == max_retries:
-                return {"url": url, "error": str(e), "status": response.status_code, 'from_cache': False, 'name': 'Error' , 'content': 'Error: Something went wrong'}
+                # return {"url": url, "error": str(e), "status": response.status_code, 'from_cache': False , 'content': 'Error: Something went wrong'} # type: ignore
+                print("Failed Attempt")
             await asyncio.sleep(retry_delay)
 
 
